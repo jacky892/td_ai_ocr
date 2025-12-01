@@ -5,6 +5,11 @@ import json
 import tempfile
 import os
 import sys
+import requests
+import base64
+import io
+import re
+from typing import Optional, Dict, Any, List
 from pdf2image import convert_from_path
 from shutil import which
 from cpdf2txt import extract_text_from_pdf
@@ -22,6 +27,51 @@ except ImportError as e:
 ollama_host = get_ollama_host()
 if ollama_host:
     os.environ["OLLAMA_HOST"] = ollama_host
+
+def image_to_base64(pil_image) -> str:
+    """Helper to convert PIL image to base64 string."""
+    buffered = io.BytesIO()
+    pil_image.save(buffered, format="JPEG")
+    return base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+def query_ollama_api(prompt: str, pil_image_path: str, model: str) -> Optional[str]:
+    """Sends request to Ollama via the REST API."""
+    from PIL import Image
+    try:
+        pil_image = Image.open(pil_image_path)
+    except Exception as e:
+        print(f"Error opening image {pil_image_path}: {e}", file=sys.stderr)
+        return None
+
+    image_b64 = image_to_base64(pil_image)
+    url = f"{ollama_host}/api/generate"
+
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "images": [image_b64],
+        "stream": False,
+        "format": "json"
+    }
+
+    print(f"Sending request to {url} (Model: {model})...")
+    try:
+        response = requests.post(url, json=payload, timeout=300) # 5 min timeout
+        response.raise_for_status()
+        full_ollama_response = response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Ollama API Error: {e}", file=sys.stderr)
+        return None
+    except json.JSONDecodeError as e:
+        print(f"Ollama API JSON Decode Error: {e}. Raw response: {response.text}", file=sys.stderr)
+        return None
+
+    raw_response = full_ollama_response.get("response", "")
+    if not raw_response or not raw_response.strip():
+        # If 'response' is empty, try 'thinking' field (common for some Ollama models)
+        raw_response = full_ollama_response.get("thinking", "")
+
+    return raw_response
 
 def check_poppler():
     """Check if poppler is installed."""
@@ -134,23 +184,13 @@ Return ONLY the JSON object. Do not include any other text or markdown formattin
         final_prompt = PROMPT_TEMPLATE.replace("{{FIELD_NAME}}", label_on_document)
         final_prompt = final_prompt.replace("{{EXTRACTED_TEXT}}", extracted_text)
 
-        # Prepare and run the ollama command
-        command = [
-            "ollama", "run", model, final_prompt, temp_image_path
-        ]
-        
+        # Prepare and run the ollama command (via API)
         print(f"Running ollama command for field: '{label_on_document}'")
-        # print(f"Command: {command}") # Uncomment for debugging
+        raw_output = query_ollama_api(final_prompt, temp_image_path, model)
 
-        # Use shell=False to avoid issues with special characters in the prompt
-        result = subprocess.run(command, shell=False, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            print("Error running ollama:", file=sys.stderr)
-            print(result.stderr, file=sys.stderr)
+        if raw_output is None:
+            print("Error running ollama API.", file=sys.stderr)
             return None
-
-        raw_output = result.stdout.strip()
         
         try:
             # Find the JSON part of the output (robustly)
