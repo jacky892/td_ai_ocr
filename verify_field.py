@@ -14,7 +14,6 @@ from pdf2image import convert_from_path
 from shutil import which
 from cpdf2txt import extract_text_from_pdf
 from tradeutil.trade_declare_support import get_trade_declaration_field_mapping
-import json_repair
 
 try:
     from tradeutil.config_utils import get_ollama_host
