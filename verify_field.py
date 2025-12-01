@@ -5,10 +5,83 @@ import json
 import tempfile
 import os
 import sys
+import requests
+import base64
+import io
+import re
+from typing import Optional, Dict, Any, List
 from pdf2image import convert_from_path
 from shutil import which
 from cpdf2txt import extract_text_from_pdf
 from tradeutil.trade_declare_support import get_trade_declaration_field_mapping
+
+try:
+    from tradeutil.config_utils import get_ollama_host
+except ImportError as e:
+    print(f"Warning: Could not import get_ollama_host from tradeutil.config_utils: {e}", file=sys.stderr)
+    # Fallback if import fails
+    def get_ollama_host():
+        return os.environ.get("OLLAMA_HOST", "http://localhost:11435")
+
+# Set OLLAMA_HOST env var for subprocess calls
+ollama_host = get_ollama_host()
+if ollama_host:
+    os.environ["OLLAMA_HOST"] = ollama_host
+
+def image_to_base64(pil_image) -> str:
+    """Helper to convert PIL image to base64 string."""
+    buffered = io.BytesIO()
+    pil_image.save(buffered, format="JPEG")
+    return base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+def query_ollama_api(prompt: str, pil_image_path: str, model: str) -> Optional[str]:
+    """Sends request to Ollama via the REST API."""
+    from PIL import Image
+    try:
+        with Image.open(pil_image_path) as pil_image:
+            image_b64 = image_to_base64(pil_image)
+    except Exception as e:
+        print(f"Error opening image {pil_image_path}: {e}", file=sys.stderr)
+        return None
+
+    url = f"{ollama_host}/api/generate"
+
+    payload = {
+        "model": model,
+        "prompt": prompt,
+        "images": [image_b64],
+        "stream": False,
+        "format": "json"
+    }
+
+    print(f"Sending request to {url} (Model: {model})...")
+    print(f"Debug - PDF Image Path: {pil_image_path}", file=sys.stderr)
+    if os.path.exists(pil_image_path):
+        print(f"Debug - PDF Image Size: {os.path.getsize(pil_image_path)} bytes", file=sys.stderr)
+    else:
+        print(f"Debug - PDF Image does not exist!", file=sys.stderr)
+
+    print("-" * 40, file=sys.stderr)
+    print(f"Debug - Prompt Sent to Model:\n{prompt}", file=sys.stderr)
+    print("-" * 40, file=sys.stderr)
+
+    try:
+        response = requests.post(url, json=payload, timeout=300) # 5 min timeout
+        response.raise_for_status()
+        full_ollama_response = response.json()
+    except requests.exceptions.RequestException as e:
+        print(f"Ollama API Error: {e}", file=sys.stderr)
+        return None
+    except json.JSONDecodeError as e:
+        print(f"Ollama API JSON Decode Error: {e}. Raw response: {response.text}", file=sys.stderr)
+        return None
+
+    raw_response = full_ollama_response.get("response", "")
+    if not raw_response or not raw_response.strip():
+        # If 'response' is empty, try 'thinking' field (common for some Ollama models)
+        raw_response = full_ollama_response.get("thinking", "")
+
+    return raw_response
 
 def check_poppler():
     """Check if poppler is installed."""
@@ -56,6 +129,8 @@ def verify_field(pdf_path, page_number, field_name_input, model, rotate_pages=No
     # Determine the actual label to look for on the document (Chinese)
     label_on_document = get_document_label(field_name_input)
 
+    print(f"Debug - Analyzing PDF: {pdf_path}, Page: {page_number}, Field: {field_name_input}", file=sys.stderr)
+
     # Extract text context
     print(f"Extracting text context for page {page_number}...", file=sys.stderr)
     extracted_text = extract_text_from_pdf(
@@ -65,6 +140,8 @@ def verify_field(pdf_path, page_number, field_name_input, model, rotate_pages=No
         use_ocr=True # Always try OCR for verification context
     )
     
+    print(f"Debug - Extracted Text (First 200 chars): {extracted_text[:200] if extracted_text else 'None'}", file=sys.stderr)
+
     # If extraction returned nothing useful, provide a placeholder
     if not extracted_text or not extracted_text.strip():
         extracted_text = "(No text could be extracted)"
@@ -97,47 +174,32 @@ def verify_field(pdf_path, page_number, field_name_input, model, rotate_pages=No
                  img.save(temp_image_path)
                  print(f"Rotated verification image for page {page_number}.", file=sys.stderr)
 
-        # Define the prompt template directly
+        # Define the prompt template (Purely visual)
         PROMPT_TEMPLATE = """You are an expert OCR data extraction tool. Your task is to extract a single field from the provided image of a document page.
 
 The field to extract is: '{{FIELD_NAME}}'
 
-Here is the text extracted from the page (may contain errors):
-\"\"\"
-{{EXTRACTED_TEXT}}
-\"\"\"
-
-Analyze the image carefully. Return your answer as a JSON object with the following structure:
+Analyze the image carefully to find the value for the field '{{FIELD_NAME}}'.
+Return your answer as a JSON object with the following structure:
 {
   "field_name": "{{FIELD_NAME}}",
-  "value": "The extracted value for the field.",
+  "value": "<THE ACTUAL VALUE FOUND IN THE IMAGE>",
   "confidence": "high|medium|low",
-  "reasoning": "A brief explanation if the value is ambiguous or hard to read."
+  "reasoning": "Explain where you found the value and any potential ambiguity."
 }
 
 Return ONLY the JSON object. Do not include any other text or markdown formatting."""
 
         # Substitute the placeholders
         final_prompt = PROMPT_TEMPLATE.replace("{{FIELD_NAME}}", label_on_document)
-        final_prompt = final_prompt.replace("{{EXTRACTED_TEXT}}", extracted_text)
 
-        # Prepare and run the ollama command
-        command = [
-            "ollama", "run", model, final_prompt, temp_image_path
-        ]
-        
+        # Prepare and run the ollama command (via API)
         print(f"Running ollama command for field: '{label_on_document}'")
-        # print(f"Command: {command}") # Uncomment for debugging
+        raw_output = query_ollama_api(final_prompt, temp_image_path, model)
 
-        # Use shell=False to avoid issues with special characters in the prompt
-        result = subprocess.run(command, shell=False, capture_output=True, text=True)
-
-        if result.returncode != 0:
-            print("Error running ollama:", file=sys.stderr)
-            print(result.stderr, file=sys.stderr)
+        if raw_output is None:
+            print("Error running ollama API.", file=sys.stderr)
             return None
-
-        raw_output = result.stdout.strip()
         
         try:
             # Find the JSON part of the output (robustly)
@@ -153,8 +215,21 @@ Return ONLY the JSON object. Do not include any other text or markdown formattin
                 parsed_json['requested_field_name'] = field_name_input
                 # Add the actual label used in the prompt
                 parsed_json['label_on_document'] = label_on_document
-                # Add the extracted text for reference
-                parsed_json['extracted_text_context'] = extracted_text
+
+                # Cross-check with extracted text
+                extracted_value = parsed_json.get("value", "").strip()
+                ocr_match = False
+                if extracted_text and extracted_value:
+                    # Normalize for comparison
+                    norm_extracted_value = re.sub(r'\s+', '', extracted_value).lower()
+                    norm_ocr_text = re.sub(r'\s+', '', extracted_text).lower()
+                    if norm_extracted_value in norm_ocr_text:
+                        ocr_match = True
+
+                parsed_json['ocr_cross_check'] = {
+                    "match": ocr_match,
+                    "extracted_text_snippet": extracted_text[:500] if extracted_text else "None"
+                }
                 
                 return parsed_json
             else:
