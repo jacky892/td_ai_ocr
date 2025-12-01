@@ -41,9 +41,16 @@ except ImportError as e:
     print("Markdown summary generation for single files will be disabled.", file=sys.stderr)
     PROJECT_IMPORTS_AVAILABLE = False
 
+try:
+    from tradeutil.config_utils import get_ollama_host
+except ImportError as e:
+    print(f"Warning: Could not import get_ollama_host from tradeutil.config_utils: {e}", file=sys.stderr)
+    # Fallback if import fails
+    def get_ollama_host():
+        return os.environ.get("OLLAMA_HOST", "http://localhost:11435")
 
 # --- Configuration ---
-OLLAMA_HOST = "http://localhost:11435"
+OLLAMA_HOST = get_ollama_host()
 #OLLAMA_HOST = "http://100.66.106.100:11435"
 OLLAMA_DEFAULT_MODEL = "mistral-small3.2:latest"
 
@@ -56,9 +63,9 @@ GEMINI_DEFAULT_MODEL = "gemini-2.5-pro"
 DECLARATION_PROMPT = """You are a specialized trade document parser. Extract the following fields from the Export Declaration (报关单) and return the data in a strict JSON format.
 
 Here is the text extracted from the page (may contain errors):
-"""
+\"\"\"
 {{EXTRACTED_TEXT}}
-"""
+\"\"\"
 
 **JSON Schema:**
 {
