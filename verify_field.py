@@ -10,6 +10,19 @@ from shutil import which
 from cpdf2txt import extract_text_from_pdf
 from tradeutil.trade_declare_support import get_trade_declaration_field_mapping
 
+try:
+    from tradeutil.config_utils import get_ollama_host
+except ImportError as e:
+    print(f"Warning: Could not import get_ollama_host from tradeutil.config_utils: {e}", file=sys.stderr)
+    # Fallback if import fails
+    def get_ollama_host():
+        return os.environ.get("OLLAMA_HOST", "http://localhost:11435")
+
+# Set OLLAMA_HOST env var for subprocess calls
+ollama_host = get_ollama_host()
+if ollama_host:
+    os.environ["OLLAMA_HOST"] = ollama_host
+
 def check_poppler():
     """Check if poppler is installed."""
     if which("pdftoppm") is None:
