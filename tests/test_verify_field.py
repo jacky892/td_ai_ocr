@@ -22,12 +22,8 @@ class TestVerifyField(unittest.TestCase):
         os.makedirs(self.temp_dir, exist_ok=True)
         self.pdf_path = os.path.join(self.temp_dir, 'test_sample.pdf')
 
-        # Use the /tmp source if available and valid (to bypass repo corruption issues)
-        tmp_source = "/tmp/file_attachments/rb_and_sg/3/SG单世华走货报关单(2025.06.19).pdf"
-        if os.path.exists(tmp_source):
-             shutil.copy(tmp_source, self.pdf_path)
-        else:
-             shutil.copy(self.repo_pdf_path, self.pdf_path)
+        # Copy from repo sample to temp location
+        shutil.copy(self.repo_pdf_path, self.pdf_path)
 
         self.page_number = 1
         self.model = "qwen3-vl:32b" # Using the model that worked
