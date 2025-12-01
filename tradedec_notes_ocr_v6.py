@@ -30,8 +30,16 @@ try:
 except ImportError:
     JSONDIFF_AVAILABLE = False
 
+try:
+    from tradeutil.config_utils import get_ollama_host
+except ImportError as e:
+    print(f"Warning: Could not import get_ollama_host from tradeutil.config_utils: {e}", file=sys.stderr)
+    # Fallback if import fails
+    def get_ollama_host():
+        return os.environ.get("OLLAMA_HOST", "http://localhost:11435")
+
 # --- Configuration ---
-OLLAMA_HOST = "http://localhost:11435"
+OLLAMA_HOST = get_ollama_host()
 #OLLAMA_HOST = "http://100.66.106.100:11435"
 OLLAMA_DEFAULT_MODEL = "mistral-small3.2:latest"
 
