@@ -38,12 +38,12 @@ def query_ollama_api(prompt: str, pil_image_path: str, model: str) -> Optional[s
     """Sends request to Ollama via the REST API."""
     from PIL import Image
     try:
-        pil_image = Image.open(pil_image_path)
+        with Image.open(pil_image_path) as pil_image:
+            image_b64 = image_to_base64(pil_image)
     except Exception as e:
         print(f"Error opening image {pil_image_path}: {e}", file=sys.stderr)
         return None
 
-    image_b64 = image_to_base64(pil_image)
     url = f"{ollama_host}/api/generate"
 
     payload = {
@@ -55,6 +55,16 @@ def query_ollama_api(prompt: str, pil_image_path: str, model: str) -> Optional[s
     }
 
     print(f"Sending request to {url} (Model: {model})...")
+    print(f"Debug - PDF Image Path: {pil_image_path}", file=sys.stderr)
+    if os.path.exists(pil_image_path):
+        print(f"Debug - PDF Image Size: {os.path.getsize(pil_image_path)} bytes", file=sys.stderr)
+    else:
+        print(f"Debug - PDF Image does not exist!", file=sys.stderr)
+
+    print("-" * 40, file=sys.stderr)
+    print(f"Debug - Prompt Sent to Model:\n{prompt}", file=sys.stderr)
+    print("-" * 40, file=sys.stderr)
+
     try:
         response = requests.post(url, json=payload, timeout=300) # 5 min timeout
         response.raise_for_status()
@@ -119,6 +129,8 @@ def verify_field(pdf_path, page_number, field_name_input, model, rotate_pages=No
     # Determine the actual label to look for on the document (Chinese)
     label_on_document = get_document_label(field_name_input)
 
+    print(f"Debug - Analyzing PDF: {pdf_path}, Page: {page_number}, Field: {field_name_input}", file=sys.stderr)
+
     # Extract text context
     print(f"Extracting text context for page {page_number}...", file=sys.stderr)
     extracted_text = extract_text_from_pdf(
@@ -128,6 +140,8 @@ def verify_field(pdf_path, page_number, field_name_input, model, rotate_pages=No
         use_ocr=True # Always try OCR for verification context
     )
     
+    print(f"Debug - Extracted Text (First 200 chars): {extracted_text[:200] if extracted_text else 'None'}", file=sys.stderr)
+
     # If extraction returned nothing useful, provide a placeholder
     if not extracted_text or not extracted_text.strip():
         extracted_text = "(No text could be extracted)"
