@@ -19,18 +19,29 @@ def get_trade_declaration_field_mapping():
 
         # Coded Attributes
         "监管方式": "coded_attributes.trade_mode",
+        "监管方式代码": "coded_attributes.trade_mode_id",
         "征免性质": "coded_attributes.levy_nature",
+        "征免性质代码": "coded_attributes.levy_nature_id",
         "出境关别": "coded_attributes.customs_office",
+        "出境关别代码": "coded_attributes.customs_office_id",
         "离境口岸": "coded_attributes.exit_port",
+        "离境口岸代码": "coded_attributes.exit_port_id",
         "成交方式": "coded_attributes.transaction_mode",
+        "成交方式代码": "coded_attributes.transaction_mode_id",
         "运输方式": "coded_attributes.transport_mode",
+        "运输方式代码": "coded_attributes.transport_mode_id",
         "境内货源地": "coded_attributes.domestic_source_place",
+        "境内货源地代码": "coded_attributes.domestic_source_place_id",
         "包装种类": "coded_attributes.wrapping_type",
+        "包装种类代码": "coded_attributes.wrapping_type_id",
 
         # Logistics
         "贸易国(地区)": "logistics.trading_country",
+        "贸易国(地区)代码": "logistics.trading_country_id",
         "运抵国(地区)": "logistics.destination_country",
+        "运抵国(地区)代码": "logistics.destination_country_id",
         "指运港": "logistics.destination_port",
+        "指运港代码": "logistics.destination_port_id",
         "运输工具名称及航次号": "logistics.transport_tool_id",
         "提运单号": "logistics.bill_of_lading_no",
 
@@ -41,8 +52,13 @@ def get_trade_declaration_field_mapping():
         "数量及单位": "items.quantity_and_unit",
         "单价/总价/币制": "items.price_info",
         "原产国(地区)": "items.origin_country",
+        "原产国(地区)代码": "items.origin_country_id",
         "最终目的国(地区)": "items.final_destination_country",
+        "最终目的国(地区)代码": "items.final_destination_country_id",
+        "境内货源地": "items.domestic_source_place",
+        "境内货源地代码": "items.domestic_source_place_id",
         "征免": "items.tax_mode",
+        "征免代码": "items.tax_mode_id",
 
         # Summary
         "件数": "summary.total_packages",

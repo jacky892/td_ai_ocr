@@ -55,10 +55,10 @@ GEMINI_DEFAULT_MODEL = "gemini-2.5-pro"
 # --- Prompts ---
 DECLARATION_PROMPT = """You are a specialized trade document parser. Extract the following fields from the Export Declaration (报关单) and return the data in a strict JSON format.
 
+For fields that contain a category ID or code in parentheses (e.g., "Transport Mode (2)"), extract the name into the main field (e.g., "Transport Mode") and the code into a separate field with the suffix `_id` (e.g., "Transport Mode_id").
+
 Here is the text extracted from the page (may contain errors):
-"""
 {{EXTRACTED_TEXT}}
-"""
 
 **JSON Schema:**
 {
@@ -77,19 +77,30 @@ Here is the text extracted from the page (may contain errors):
     "declaring_agent": "The name and code of the declaring agent (申报单位)"
   },
   "coded_attributes": {
-    "trade_mode": "The trade mode (监管方式)",
-    "levy_nature": "The nature of levy and exemption (征免性质)",
-    "customs_office": "The customs office (备案号)",
-    "exit_port": "The port of exit (出/境关别)",
-    "transaction_mode": "The transaction mode (成交方式)",
-    "transport_mode": "The mode of transport (运输方式)",
-    "domestic_source_place": "The domestic source of goods (境内货源地)",
-    "wrapping_type": "The wrapping type (包装种类)"
+    "trade_mode": "The trade mode name (监管方式)",
+    "trade_mode_id": "The trade mode code",
+    "levy_nature": "The nature of levy and exemption name (征免性质)",
+    "levy_nature_id": "The nature of levy and exemption code",
+    "customs_office": "The customs office name (备案号)",
+    "customs_office_id": "The customs office code",
+    "exit_port": "The port of exit name (出/境关别)",
+    "exit_port_id": "The port of exit code",
+    "transaction_mode": "The transaction mode name (成交方式)",
+    "transaction_mode_id": "The transaction mode code",
+    "transport_mode": "The mode of transport name (运输方式)",
+    "transport_mode_id": "The mode of transport code",
+    "domestic_source_place": "The domestic source of goods name (境内货源地)",
+    "domestic_source_place_id": "The domestic source of goods code",
+    "wrapping_type": "The wrapping type name (包装种类)",
+    "wrapping_type_id": "The wrapping type code"
   },
   "logistics": {
-    "trading_country": "The trading country (运抵国(地区))",
-    "destination_country": "The destination country (指运港)",
-    "destination_port": "The destination port (离境口岸)",
+    "trading_country": "The trading country name (运抵国(地区))",
+    "trading_country_id": "The trading country code",
+    "destination_country": "The destination country name (指运港)",
+    "destination_country_id": "The destination country code",
+    "destination_port": "The destination port name (离境口岸)",
+    "destination_port_id": "The destination port code",
     "transport_tool_id": "The transport tool ID (运输工具名称及航次号)",
     "bill_of_lading_no": "The bill of lading number (提运单号)"
   },
@@ -104,10 +115,14 @@ Here is the text extracted from the page (may contain errors):
       "unit_price": "The unit price (单价)",
       "total_price": "The total price (总价)",
       "net_weight_kg": "The net weight in kg (净重)",
-      "origin_country": "The country of origin (原产国)",
-      "final_destination_country": "The final destination country (最终目的国)",
-      "domestic_source_place": "The domestic source place (境内货源地)",
-      "tax_mode": "The tax mode (征免)"
+      "origin_country": "The country of origin name (原产国)",
+      "origin_country_id": "The country of origin code",
+      "final_destination_country": "The final destination country name (最终目的国)",
+      "final_destination_country_id": "The final destination country code",
+      "domestic_source_place": "The domestic source place name (境内货源地)",
+      "domestic_source_place_id": "The domestic source place code",
+      "tax_mode": "The tax mode name (征免)",
+      "tax_mode_id": "The tax mode code"
     }
   ],
   "summary": {
@@ -160,16 +175,38 @@ def query_ollama(prompt: str, pil_image, model: str, timeout: int) -> Optional[s
     print(f"Sending request to {url} (Model: {model}, Timeout: {timeout}s)...")
     try:
         response = requests.post(url, json=payload, timeout=timeout*2)
+        print(f"Debug: Response Status Code: {response.status_code}", file=sys.stderr)
         response.raise_for_status()
         full_ollama_response = response.json()
+        print(f"Debug: Response JSON keys: {list(full_ollama_response.keys())}", file=sys.stderr)
     except requests.exceptions.RequestException as e:
         print(f"Ollama API Error: {e}", file=sys.stderr)
+        if e.response is not None:
+             print(f"Debug: Error Response Content: {e.response.text}", file=sys.stderr)
         return None
     except json.JSONDecodeError as e:
         print(f"Ollama API JSON Decode Error: {e}. Raw response: {response.text}", file=sys.stderr)
         return None
+    except Exception as e:
+        print(f"Unexpected Error in query_ollama: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return None
 
-    return full_ollama_response.get("response", "")
+    print("Debug: --- Full Ollama Response Analysis ---", file=sys.stderr)
+    for key, value in full_ollama_response.items():
+        if isinstance(value, str):
+            print(f"Key: '{key}' | Type: str | Length: {len(value)} | Content:\n{value}\n", file=sys.stderr)
+        else:
+            print(f"Key: '{key}' | Type: {type(value).__name__} | Content: {value}", file=sys.stderr)
+    print("Debug: --- End Response Analysis ---", file=sys.stderr)
+
+    response_text = full_ollama_response.get("response", "")
+    if not response_text and "thinking" in full_ollama_response:
+        print("Debug: 'response' is empty, using 'thinking' field instead.", file=sys.stderr)
+        response_text = full_ollama_response["thinking"]
+
+    return response_text
 
 def query_ollama_cli(prompt: str, pil_image, model: str, timeout: int) -> Optional[str]:
     """Sends request to Ollama via the command-line interface."""
