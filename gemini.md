@@ -9,3 +9,5 @@
 4.  **Use User Test Cases:** The user has consistently provided the exact command they are using to test. I failed to properly incorporate this into my own validation loop. **Lesson:** I must use the user's provided commands and context to test and verify my changes to ensure they solve the specific problem the user is facing.
 
 5.  **Robust Parsing of CLI Output:** The `ollama run` command produces a complex stream containing conversational text and ANSI escape codes (`\x1b[...]`) for cursor animation. My initial parsing logic, which simply searched for the first `{` character, was brittle and failed completely. **Lesson:** Raw CLI output cannot be trusted. It must be sanitized. I must account for and strip non-data characters like ANSI codes, and use more robust logic (like reverse searching for the *last* JSON object) to reliably extract data.
+
+6, **always print out the ollama response (http or cli) complete for parsing, as model output can vary, don't assume anthing, for example sometimes the answer can be in the thinking tokens.
